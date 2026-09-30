@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Кнопка "Run workflow" на вкладке Actions: проверить сразу после изменения схемы BFF
+  workflow_dispatch:
+  # Раз в сутки (06:30 UTC): изменение схемы в marketplace-bff само по себе этот CI не запускает
+  schedule:
+    - cron: "30 6 * * *"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Свежая схема из main marketplace-bff + запросы UI -> src/gql/.
+      # Падает, если запрос UI использует поле или аргумент, которого больше нет в схеме.
+      - name: Download BFF schema and generate types
+        run: npm run gen
+
+      # Не падаем, а предупреждаем: схема BFF поменялась относительно закоммиченных типов
+      - name: Show BFF schema changes
+        run: |
+          if ! git diff --exit-code src/gql; then
+            echo "::warning::BFF schema changed. Run npm run gen and commit src/gql"
+          fi
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
